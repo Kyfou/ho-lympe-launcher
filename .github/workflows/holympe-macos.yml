@@ -1,7 +1,7 @@
-name: Ho-Lympe macOS
+﻿name: Ho-Lympe macOS
 
 # The Mac app (Apple Silicon), built with Homebrew's libraries (fast: no Qt build).
-# Run by tools/publish_update.py with the version being published, or by hand.
+# Started by tools/publish_update.py with the version being published, or by hand.
 on:
   workflow_dispatch:
     inputs:
