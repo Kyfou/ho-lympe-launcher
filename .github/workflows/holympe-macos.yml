@@ -10,6 +10,9 @@ on:
         required: false
         default: "dev"
 
+permissions:
+  contents: write
+
 jobs:
   mac:
     runs-on: macos-15
@@ -47,9 +50,10 @@ jobs:
           codesign --force --deep -s - "$APP"
           ditto -c -k --sequesterRsrc --keepParent "$APP" Ho-Lympe-mac.zip
 
+      # Kept as a release asset (artifacts have a small storage quota on this account)
       - name: Upload
-        uses: actions/upload-artifact@v4
-        with:
-          name: Ho-Lympe-mac
-          path: Ho-Lympe-mac.zip
-          retention-days: 7
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view mac-build >/dev/null 2>&1 || gh release create mac-build --title "Ho-Lympe Mac" --notes "Dernière app Mac construite" --prerelease
+          gh release upload mac-build Ho-Lympe-mac.zip --clobber
