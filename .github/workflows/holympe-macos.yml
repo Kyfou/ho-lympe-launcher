@@ -1,4 +1,4 @@
-﻿name: Ho-Lympe macOS
+name: Ho-Lympe macOS
 
 # The Mac app (Apple Silicon), built with Homebrew's libraries (fast: no Qt build).
 # Started by tools/publish_update.py with the version being published, or by hand.
@@ -12,14 +12,16 @@ on:
 
 jobs:
   mac:
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - name: Check out sources
         uses: actions/checkout@v4
 
       - name: Libraries
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: 1
+          HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: 1
         run: |
-          brew update
           brew install qt sdl2 libarchive zstd enet faad2 pkgconf ninja
 
       - name: Build
