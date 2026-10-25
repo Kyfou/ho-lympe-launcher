@@ -1,6 +1,7 @@
 name: Ho-Lympe macOS
 
-# The Mac app (Apple Silicon), built with Homebrew's libraries (fast: no Qt build).
+# The Mac app, universal (Intel and Apple Silicon, macOS 10.15+): melonDS's own way, with
+# static libraries from vcpkg (cached; the first build takes a while, Qt is compiled).
 # Started by tools/publish_update.py with the version being published, or by hand.
 on:
   workflow_dispatch:
@@ -14,43 +15,82 @@ permissions:
   contents: write
 
 jobs:
-  mac:
+  build:
+    strategy:
+      matrix:
+        arch: [x86_64, arm64]
+    name: ${{ matrix.arch }}
+    runs-on: macos-15
+    env:
+      VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}/vcpkg_cache,readwrite
+    steps:
+      - name: Check out sources
+        uses: actions/checkout@v4
+      - name: Tools
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: 1
+          HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: 1
+        run: brew install autoconf automake autoconf-archive libtool python-setuptools
+      - name: Set up CMake
+        uses: lukka/get-cmake@latest
+      - name: Restore vcpkg cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ github.workspace }}/vcpkg_cache
+          key: vcpkg-${{ matrix.arch }}-osx-${{ hashFiles('vcpkg.json') }}
+          restore-keys: vcpkg-${{ matrix.arch }}-osx-
+      - name: Set up vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgJsonGlob: vcpkg.json
+      - name: Build
+        uses: lukka/run-cmake@v10
+        with:
+          configurePreset: release-mac-${{ matrix.arch }}
+          buildPreset: release-mac-${{ matrix.arch }}
+      - name: Save vcpkg cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ github.workspace }}/vcpkg_cache
+          key: vcpkg-${{ matrix.arch }}-osx-${{ hashFiles('vcpkg.json') }}-${{ github.run_id }}
+      - name: Keep the app
+        run: |
+          cd build/release-mac-${{ matrix.arch }}
+          ditto -c -k --keepParent melonDS.app "$GITHUB_WORKSPACE/mac-${{ matrix.arch }}.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac-${{ matrix.arch }}
+          path: mac-${{ matrix.arch }}.zip
+          retention-days: 1
+
+  app:
+    needs: build
     runs-on: macos-15
     steps:
       - name: Check out sources
         uses: actions/checkout@v4
-
-      - name: Libraries
-        env:
-          HOMEBREW_NO_AUTO_UPDATE: 1
-          HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: 1
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: mac-*
+          merge-multiple: true
+      - name: Ho-Lympe.app (universal)
         run: |
-          brew install qt sdl2 libarchive zstd enet faad2 pkgconf ninja
-
-      - name: Build
-        run: |
-          export PKG_CONFIG_PATH="$(brew --prefix libarchive)/lib/pkgconfig:$(brew --prefix zstd)/lib/pkgconfig:$PKG_CONFIG_PATH"
-          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_PREFIX_PATH="$(brew --prefix qt);$(brew --prefix libarchive);$(brew --prefix enet)" \
-            -DUSE_QT6=ON -DENABLE_JIT=ON
-          cmake --build build
-
-      - name: Ho-Lympe.app
-        run: |
+          ditto -x -k mac-x86_64.zip x86_64
+          ditto -x -k mac-arm64.zip arm64
           APP=Ho-Lympe.app
-          rm -rf "$APP"
-          cp -R build/melonDS.app "$APP"
+          cp -R arm64/melonDS.app "$APP"
+          lipo x86_64/melonDS.app/Contents/MacOS/melonDS arm64/melonDS.app/Contents/MacOS/melonDS -create -output "$APP/Contents/MacOS/melonDS"
+          lipo -info "$APP/Contents/MacOS/melonDS"
           /usr/libexec/PlistBuddy -c "Set :CFBundleName Ho-Lympe" "$APP/Contents/Info.plist" || true
           /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string Ho-Lympe" "$APP/Contents/Info.plist" || true
           mkdir -p "$APP/Contents/Resources"
           cp -R holympe/assets "$APP/Contents/Resources/assets"
           cp holympe/melonDS.toml "$APP/Contents/Resources/melonDS.toml"
           echo "${{ inputs.version }}" > "$APP/Contents/Resources/holympe-version.txt"
-          "$(brew --prefix qt)/bin/macdeployqt" "$APP" -verbose=1
           codesign --force --deep -s - "$APP"
           ditto -c -k --sequesterRsrc --keepParent "$APP" Ho-Lympe-mac.zip
-
-      # Kept as a release asset (artifacts have a small storage quota on this account)
+      # Kept as a release asset (publish_update.py fetches it from there)
       - name: Upload
         env:
           GH_TOKEN: ${{ github.token }}
