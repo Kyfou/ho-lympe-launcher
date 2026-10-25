@@ -353,6 +353,8 @@ private:
     std::string micWavPath;
 
     int keyMapping[12];
+    bool defaultKeyboard = false; // HeartGold Coop: no keys set, the default AZERTY layout is used
+    static int extraKeyButton(int key);
     int joyMapping[12];
     int hkKeyMapping[HK_MAX];
     int hkJoyMapping[HK_MAX];

@@ -177,6 +177,7 @@ private:
     void* bottomBuffer;
 
     QImage screen[2];
+    QImage uiImage; // HeartGold Coop: HD menus
     QTransform screenTrans[kMaxScreenTransforms];
 };
 
@@ -238,6 +239,8 @@ private:
     std::map<unsigned int, GLuint> osdTextures;
 
     GLuint logoTexture;
+    GLuint uiTexture = 0; // HeartGold Coop: HD menus
+    QImage uiImage;
 
     void osdRenderItem(OSDItem* item) override;
     void osdDeleteItem(OSDItem* item) override;

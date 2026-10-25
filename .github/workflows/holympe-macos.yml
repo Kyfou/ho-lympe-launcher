@@ -1,0 +1,53 @@
+name: Ho-Lympe macOS
+
+# The Mac app (Apple Silicon), built with Homebrew's libraries (fast: no Qt build).
+# Run by tools/publish_update.py with the version being published, or by hand.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Ho-Lympe version written in the app"
+        required: false
+        default: "dev"
+
+jobs:
+  mac:
+    runs-on: macos-14
+    steps:
+      - name: Check out sources
+        uses: actions/checkout@v4
+
+      - name: Libraries
+        run: |
+          brew update
+          brew install qt sdl2 libarchive zstd enet faad2 pkgconf ninja
+
+      - name: Build
+        run: |
+          export PKG_CONFIG_PATH="$(brew --prefix libarchive)/lib/pkgconfig:$(brew --prefix zstd)/lib/pkgconfig:$PKG_CONFIG_PATH"
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="$(brew --prefix qt);$(brew --prefix libarchive);$(brew --prefix enet)" \
+            -DUSE_QT6=ON -DENABLE_JIT=ON
+          cmake --build build
+
+      - name: Ho-Lympe.app
+        run: |
+          APP=Ho-Lympe.app
+          rm -rf "$APP"
+          cp -R build/melonDS.app "$APP"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleName Ho-Lympe" "$APP/Contents/Info.plist" || true
+          /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string Ho-Lympe" "$APP/Contents/Info.plist" || true
+          mkdir -p "$APP/Contents/Resources"
+          cp -R holympe/assets "$APP/Contents/Resources/assets"
+          cp holympe/melonDS.toml "$APP/Contents/Resources/melonDS.toml"
+          echo "${{ inputs.version }}" > "$APP/Contents/Resources/holympe-version.txt"
+          "$(brew --prefix qt)/bin/macdeployqt" "$APP" -verbose=1
+          codesign --force --deep -s - "$APP"
+          ditto -c -k --sequesterRsrc --keepParent "$APP" Ho-Lympe-mac.zip
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: Ho-Lympe-mac
+          path: Ho-Lympe-mac.zip
+          retention-days: 7

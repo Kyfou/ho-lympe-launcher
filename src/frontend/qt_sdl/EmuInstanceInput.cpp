@@ -16,6 +16,7 @@
     with melonDS. If not, see http://www.gnu.org/licenses/.
 */
 
+#include <stdlib.h>
 #include <QKeyEvent>
 #include <SDL2/SDL.h>
 
@@ -131,6 +132,26 @@ void EmuInstance::inputLoadConfig()
         hkJoyMapping[i] = joycfg.GetInt(hotkeyNames[i]);
     }
 
+    // HeartGold Coop: a keyboard with no keys set gets a ready-to-play AZERTY layout:
+    // Z Q S D to move, K / L to confirm / go back, I = menu, J = Y, A / E = L / R,
+    // Enter = Start, Backspace = Select (plus the arrows, Space and Escape, see below)
+    // DS keys: A, B, Select, Start, Right, Left, Up, Down, R, L, X, Y
+    bool keyboardSet = false;
+    for (int i = 0; i < 12; i++)
+        if (keyMapping[i] != -1)
+            keyboardSet = true;
+    defaultKeyboard = !keyboardSet;
+    if (defaultKeyboard)
+    {
+        static const int kDefaultKeys[12] = {
+            Qt::Key_K, Qt::Key_L, Qt::Key_Backspace, Qt::Key_Return,
+            Qt::Key_D, Qt::Key_Q, Qt::Key_Z, Qt::Key_S,
+            Qt::Key_E, Qt::Key_A, Qt::Key_I, Qt::Key_J,
+        };
+        for (int i = 0; i < 12; i++)
+            keyMapping[i] = kDefaultKeys[i];
+    }
+
     setJoystick(localCfg.GetInt("JoystickID"));
     SDL_UnlockMutex(joyMutex.get());
 }
@@ -230,7 +251,8 @@ void EmuInstance::openJoystick()
 
     if (joystick) SDL_JoystickClose(joystick);
 
-    int num = SDL_NumJoysticks();
+    // HeartGold Coop: lets a second window on the same PC ignore the controller
+    int num = getenv("HGCOOP_NO_JOYSTICK") ? 0 : SDL_NumJoysticks();
     if (num < 1)
     {
         controller = nullptr;
@@ -243,6 +265,20 @@ void EmuInstance::openJoystick()
 
     if (joystickID >= num)
         joystickID = 0;
+
+    // HeartGold Coop: prefer a real game controller (Xbox, PlayStation, Switch...)
+    // over other devices listed first (drawing tablets, virtual devices...)
+    if (!SDL_IsGameController(joystickID))
+    {
+        for (int i = 0; i < num; i++)
+        {
+            if (SDL_IsGameController(i))
+            {
+                joystickID = i;
+                break;
+            }
+        }
+    }
 
     joystick = SDL_JoystickOpen(joystickID);
 
@@ -333,10 +369,29 @@ void EmuInstance::onKeyPress(QKeyEvent* event)
     for (int i = 0; i < 12; i++)
         if (keyKP == keyMapping[i])
             keyInputMask &= ~(1<<i);
+    int extra = defaultKeyboard ? extraKeyButton(keyKP) : -1;
+    if (extra >= 0)
+        keyInputMask &= ~(1<<extra);
 
     for (int i = 0; i < HK_MAX; i++)
         if (keyHK == hkKeyMapping[i])
             keyHotkeyMask |= (1<<i);
+}
+
+// HeartGold Coop: second keys of the default layout (DS key index, or -1)
+int EmuInstance::extraKeyButton(int key)
+{
+    switch (key)
+    {
+    case Qt::Key_Space: return 0;  // A
+    case Qt::Key_Escape: return 1; // B
+    case Qt::Key_Enter: return 3;  // Start (keypad)
+    case Qt::Key_Right: return 4;
+    case Qt::Key_Left: return 5;
+    case Qt::Key_Up: return 6;
+    case Qt::Key_Down: return 7;
+    default: return -1;
+    }
 }
 
 void EmuInstance::onKeyRelease(QKeyEvent* event)
@@ -349,6 +404,9 @@ void EmuInstance::onKeyRelease(QKeyEvent* event)
     for (int i = 0; i < 12; i++)
         if (keyKP == keyMapping[i])
             keyInputMask |= (1<<i);
+    int extra = defaultKeyboard ? extraKeyButton(keyKP) : -1;
+    if (extra >= 0)
+        keyInputMask |= (1<<extra);
 
     for (int i = 0; i < HK_MAX; i++)
         if (keyHK == hkKeyMapping[i])
@@ -436,11 +494,36 @@ void EmuInstance::inputProcess()
     }
 
     joyInputMask = 0xFFF;
-    if (joystick)
+    if (joystick && !controller) // game controllers use the standard layout below
     {
         for (int i = 0; i < 12; i++)
             if (joystickButtonDown(joyMapping[i]))
                 joyInputMask &= ~(1 << i);
+    }
+    // HeartGold Coop: any game controller works without setup, with its standard
+    // layout (the confirm button at the bottom, like on Xbox / PlayStation pads)
+    if (controller)
+    {
+        // DS keys: A, B, Select, Start, Right, Left, Up, Down, R, L, X, Y
+        static const SDL_GameControllerButton kButtons[12] = {
+            SDL_CONTROLLER_BUTTON_A, SDL_CONTROLLER_BUTTON_B, SDL_CONTROLLER_BUTTON_BACK, SDL_CONTROLLER_BUTTON_START,
+            SDL_CONTROLLER_BUTTON_DPAD_RIGHT, SDL_CONTROLLER_BUTTON_DPAD_LEFT, SDL_CONTROLLER_BUTTON_DPAD_UP, SDL_CONTROLLER_BUTTON_DPAD_DOWN,
+            SDL_CONTROLLER_BUTTON_RIGHTSHOULDER, SDL_CONTROLLER_BUTTON_LEFTSHOULDER, SDL_CONTROLLER_BUTTON_Y, SDL_CONTROLLER_BUTTON_X,
+        };
+        for (int i = 0; i < 12; i++)
+            if (SDL_GameControllerGetButton(controller, kButtons[i]))
+                joyInputMask &= ~(1 << i);
+        // Left stick as the D-pad
+        const int dead = 16000;
+        int ax = SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_LEFTX);
+        int ay = SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_LEFTY);
+        if (ax > dead) joyInputMask &= ~(1 << 4);
+        if (ax < -dead) joyInputMask &= ~(1 << 5);
+        if (ay < -dead) joyInputMask &= ~(1 << 6);
+        if (ay > dead) joyInputMask &= ~(1 << 7);
+        // Triggers as L / R too
+        if (SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_TRIGGERRIGHT) > dead) joyInputMask &= ~(1 << 8);
+        if (SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_TRIGGERLEFT) > dead) joyInputMask &= ~(1 << 9);
     }
 
     inputMask = keyInputMask & joyInputMask;

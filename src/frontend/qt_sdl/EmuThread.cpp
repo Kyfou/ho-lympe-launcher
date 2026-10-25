@@ -37,6 +37,10 @@
 
 #include "Args.h"
 #include "NDS.h"
+#include "CoopLink.h"
+#include "AutoPilot.h"
+#include "HGCoop.h"
+#include "GameUi.h"
 #include "NDSCart.h"
 #include "GBACart.h"
 #include "GPU.h"
@@ -77,6 +81,7 @@ void EmuThread::attachWindow(MainWindow* window)
     connect(this, SIGNAL(autoScreenSizingChange(int)), window->panel, SLOT(onAutoScreenSizingChanged(int)));
     connect(this, SIGNAL(windowFullscreenToggle()), window, SLOT(onFullscreenToggled()));
     connect(this, SIGNAL(screenEmphasisToggle()), window, SLOT(onScreenEmphasisToggled()));
+    connect(this, SIGNAL(coopScreenModeChange(int)), window, SLOT(onCoopScreenMode(int)));
 
     if (window->winHasMenu())
     {
@@ -133,6 +138,10 @@ void EmuThread::run()
 
     //updateRenderer();
     videoSettingsDirty = true;
+
+    CoopLink coopLink;
+    AutoPilot autoPilot;
+    int gameScreenMode = 0; // DS screens the game wants shown (COOP_SCREENS_*: 0 top, 1 bottom, 2 both)
 
     u32 nframes = 0;
     double perfCountsSec = 1.0 / SDL_GetPerformanceFrequency();
@@ -259,6 +268,22 @@ void EmuThread::run()
             else
                 emuInstance->nds->ReleaseScreen();
 
+            autoPilot.ApplyInput(emuInstance->nds);
+            GameUi::Get().Update(emuInstance->nds, coopLink.Mailbox(emuInstance->nds));
+
+            // Screens not redrawn in HD yet: show the DS screen(s) they need while they are open
+            if (u8* mailbox = coopLink.Mailbox(emuInstance->nds))
+            {
+                int mode = mailbox[CoopLink::kOffUiMenu + 6];
+                if (mode > 2)
+                    mode = 0;
+                if (mode != gameScreenMode)
+                {
+                    gameScreenMode = mode;
+                    emit coopScreenModeChange(mode);
+                }
+            }
+
             if (emuInstance->hotkeyPressed(HK_Lid))
             {
                 bool lid = !emuInstance->nds->IsLidClosed();
@@ -311,6 +336,9 @@ void EmuThread::run()
                 nlines = emuInstance->nds->RunFrame();
             }
 
+            coopLink.Update(emuInstance->nds);
+            autoPilot.AfterFrame(emuInstance->nds);
+
             if (emuInstance->ndsSave)
                 emuInstance->ndsSave->CheckFlush();
 
@@ -339,6 +367,10 @@ void EmuThread::run()
             if (emuInstance->hotkeyPressed(HK_AudioMuteToggle)) emuInstance->toggleAudioMute();
 
             bool enablefastforward = emuInstance->hotkeyDown(HK_FastForward) | emuInstance->fastForwardToggled;
+            // Ho-Lympe: the DS takes seconds to write its save (the game waits, the screen doesn't
+            // move): run through it at full speed, without sound
+            bool gameSaving = coopLink.GameSaving(emuInstance->nds);
+            enablefastforward |= gameSaving;
             bool enableslowmo = emuInstance->hotkeyDown(HK_SlowMo) | emuInstance->slowmoToggled;
 
             if (useOpenGL)
@@ -357,8 +389,11 @@ void EmuThread::run()
             fastforward = enablefastforward;
             slowmo = enableslowmo;
             emuInstance->updateFastForwardMute(fastforward);
+            if (gameSaving)
+                emuInstance->audioMutedByFastForward = true;
 
             if (slowmo) emuInstance->curFPS = emuInstance->slowmoFPS;
+            else if (gameSaving) emuInstance->curFPS = 1000.0;
             else if (fastforward) emuInstance->curFPS = emuInstance->fastForwardFPS;
             else if (!emuInstance->doLimitFPS && !emuInstance->doAudioSync) emuInstance->curFPS = 1000.0;
             else emuInstance->curFPS = emuInstance->targetFPS;
@@ -421,7 +456,10 @@ void EmuThread::run()
                     winUpdateFreq = 1;
                     
                 double actualfps = (59.8261 * 263.0) / nlines;
-                snprintf(melontitle, sizeof(melontitle), "[%d/%.0f] melonDS " MELONDS_VERSION, fps, actualfps);
+                if (HGCoop_DevMode())
+                    snprintf(melontitle, sizeof(melontitle), "[%d/%.0f] melonDS " MELONDS_VERSION, fps, actualfps);
+                else
+                    snprintf(melontitle, sizeof(melontitle), HGCOOP_TITLE);
                 changeWindowTitle(melontitle);
             }
         }
@@ -434,7 +472,7 @@ void EmuThread::run()
 
             emit windowUpdate();
 
-            snprintf(melontitle, sizeof(melontitle), "melonDS " MELONDS_VERSION);
+            snprintf(melontitle, sizeof(melontitle), HGCoop_DevMode() ? "melonDS " MELONDS_VERSION : HGCOOP_TITLE);
             changeWindowTitle(melontitle);
 
             SDL_Delay(75);

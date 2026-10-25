@@ -164,6 +164,7 @@ private slots:
     void onChangeScreenGap(QAction* act);
     void onChangeScreenLayout(QAction* act);
     void onChangeScreenSwap(bool checked);
+    void onCoopScreenMode(int mode);
     void onChangeScreenSizing(QAction* act);
     void onChangeScreenAspect(QAction* act);
     void onChangeIntegerScaling(bool checked);

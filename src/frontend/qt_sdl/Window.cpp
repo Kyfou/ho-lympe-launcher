@@ -74,6 +74,7 @@
 #include "CameraManager.h"
 #include "Window.h"
 #include "AboutDialog.h"
+#include "HGCoop.h"
 
 using namespace melonDS;
 
@@ -221,7 +222,7 @@ MainWindow::MainWindow(int id, EmuInstance* inst, QWidget* parent) :
 
     showOSD = windowCfg.GetBool("ShowOSD");
 
-    setWindowTitle("melonDS " MELONDS_VERSION);
+    setWindowTitle(HGCoop_DevMode() ? "melonDS " MELONDS_VERSION : HGCOOP_TITLE);
     setAttribute(Qt::WA_DeleteOnClose);
     setAcceptDrops(true);
     setFocusPolicy(Qt::ClickFocus);
@@ -636,6 +637,10 @@ MainWindow::MainWindow(int id, EmuInstance* inst, QWidget* parent) :
 
         setMenuBar(menubar);
 
+        // HeartGold Coop: the game has no emulator menus (hotkeys trigger the actions directly)
+        if (!HGCoop_DevMode())
+            menubar->hide();
+
         if (localCfg.GetString("Firmware.Username") == "Arisotura")
             actMPNewInstance->setText("Fart");
     }
@@ -709,6 +714,15 @@ MainWindow::MainWindow(int id, EmuInstance* inst, QWidget* parent) :
                 actScreenGap[i]->setChecked(true);
                 break;
             }
+        }
+
+        // HeartGold Coop: always start on the top screen alone (the game switches to
+        // other layouts for screens not redrawn in HD, and they may have been saved)
+        if (!HGCoop_DevMode())
+        {
+            windowCfg.SetInt("ScreenLayout", screenLayout_Natural);
+            windowCfg.SetInt("ScreenSizing", screenSizing_TopOnly);
+            windowCfg.SetBool("ScreenSwap", false);
         }
 
         actScreenLayout[windowCfg.GetInt("ScreenLayout")]->setChecked(true);
@@ -814,8 +828,8 @@ void MainWindow::createScreenPanel()
     panel = nullptr;
     if (oldpanel) delete oldpanel;
 
-    hasOGL = globalCfg.GetBool("Screen.UseGL") ||
-            (globalCfg.GetInt("3D.Renderer") != renderer3D_Software);
+    // HeartGold Coop: same rule as EmuInstance::usesOpenGL (tests force the software renderer)
+    hasOGL = emuInstance->usesOpenGL();
 
     if (hasOGL)
     {
@@ -981,7 +995,7 @@ void MainWindow::dropEvent(QDropEvent* event)
     {
         if (!emuThread->bootROM(file, errorstr))
         {
-            QMessageBox::critical(this, "melonDS", errorstr);
+            QMessageBox::critical(this, HGCOOP_TITLE, errorstr);
             return;
         }
 
@@ -996,7 +1010,7 @@ void MainWindow::dropEvent(QDropEvent* event)
     {
         if (!emuThread->insertCart(file, true, errorstr))
         {
-            QMessageBox::critical(this, "melonDS", errorstr);
+            QMessageBox::critical(this, HGCOOP_TITLE, errorstr);
             return;
         }
 
@@ -1004,7 +1018,7 @@ void MainWindow::dropEvent(QDropEvent* event)
     }
     else
     {
-        QMessageBox::critical(this, "melonDS", "The file could not be recognized as a DS or GBA ROM.");
+        QMessageBox::critical(this, HGCOOP_TITLE, "The file could not be recognized as a DS or GBA ROM.");
         return;
     }
 }
@@ -1055,7 +1069,7 @@ bool MainWindow::verifySetup()
     QString res = emuInstance->verifySetup();
     if (!res.isEmpty())
     {
-         QMessageBox::critical(this, "melonDS", res);
+         QMessageBox::critical(this, HGCOOP_TITLE, res);
          return false;
     }
 
@@ -1079,7 +1093,7 @@ bool MainWindow::preloadROMs(QStringList file, QStringList gbafile, bool boot)
     {
         if (!emuThread->insertCart(gbafile, true, errorstr))
         {
-            QMessageBox::critical(this, "melonDS", errorstr);
+            QMessageBox::critical(this, HGCOOP_TITLE, errorstr);
             return false;
         }
 
@@ -1093,7 +1107,7 @@ bool MainWindow::preloadROMs(QStringList file, QStringList gbafile, bool boot)
         {
             if (!emuThread->bootROM(file, errorstr))
             {
-                QMessageBox::critical(this, "melonDS", errorstr);
+                QMessageBox::critical(this, HGCOOP_TITLE, errorstr);
                 return false;
             }
         }
@@ -1101,7 +1115,7 @@ bool MainWindow::preloadROMs(QStringList file, QStringList gbafile, bool boot)
         {
             if (!emuThread->insertCart(file, false, errorstr))
             {
-                QMessageBox::critical(this, "melonDS", errorstr);
+                QMessageBox::critical(this, HGCOOP_TITLE, errorstr);
                 return false;
             }
         }
@@ -1115,7 +1129,7 @@ bool MainWindow::preloadROMs(QStringList file, QStringList gbafile, bool boot)
     {
         if (!emuThread->bootFirmware(errorstr))
         {
-            QMessageBox::critical(this, "melonDS", errorstr);
+            QMessageBox::critical(this, HGCOOP_TITLE, errorstr);
             return false;
         }
     }
@@ -1137,7 +1151,7 @@ QStringList MainWindow::splitArchivePath(const QString& filename, bool useMember
         const QStringList filenameParts = filename.split('|');
         if (filenameParts.size() > 2)
         {
-            QMessageBox::warning(this, "melonDS", "This path contains too many '|'.");
+            QMessageBox::warning(this, HGCOOP_TITLE, "This path contains too many '|'.");
             return {};
         }
 
@@ -1146,14 +1160,14 @@ QStringList MainWindow::splitArchivePath(const QString& filename, bool useMember
             const QString archive = filenameParts.at(0);
             if (!QFileInfo(archive).exists())
             {
-                QMessageBox::warning(this, "melonDS", "This archive does not exist.");
+                QMessageBox::warning(this, HGCOOP_TITLE, "This archive does not exist.");
                 return {};
             }
 
             const QString subfile = filenameParts.at(1);
             if (!Archive::ListArchive(archive).contains(subfile))
             {
-                QMessageBox::warning(this, "melonDS", "This archive does not contain the desired file.");
+                QMessageBox::warning(this, HGCOOP_TITLE, "This archive does not contain the desired file.");
                 return {};
             }
 
@@ -1164,7 +1178,7 @@ QStringList MainWindow::splitArchivePath(const QString& filename, bool useMember
 
     if (!QFileInfo(filename).exists())
     {
-        QMessageBox::warning(this, "melonDS", "This ROM file does not exist.");
+        QMessageBox::warning(this, HGCOOP_TITLE, "This ROM file does not exist.");
         return {};
     }
 
@@ -1190,9 +1204,9 @@ QString MainWindow::pickFileFromArchive(QString archiveFileName)
     if (archiveROMList.size() <= 1)
     {
         if (!archiveROMList.isEmpty() && archiveROMList.at(0) == "OK")
-            QMessageBox::warning(this, "melonDS", "This archive is empty.");
+            QMessageBox::warning(this, HGCOOP_TITLE, "This archive is empty.");
         else
-            QMessageBox::critical(this, "melonDS", "This archive could not be read. It may be corrupt or you don't have the permissions.");
+            QMessageBox::critical(this, HGCOOP_TITLE, "This archive could not be read. It may be corrupt or you don't have the permissions.");
         return QString();
     }
 
@@ -1210,7 +1224,7 @@ QString MainWindow::pickFileFromArchive(QString archiveFileName)
 
     if (archiveROMList.isEmpty())
     {
-        QMessageBox::warning(this, "melonDS", "This archive does not contain any supported ROMs.");
+        QMessageBox::warning(this, HGCOOP_TITLE, "This archive does not contain any supported ROMs.");
         return QString();
     }
 
@@ -1318,7 +1332,7 @@ void MainWindow::onOpenFile()
     QString errorstr;
     if (!emuThread->bootROM(file, errorstr))
     {
-        QMessageBox::critical(this, "melonDS", errorstr);
+        QMessageBox::critical(this, HGCOOP_TITLE, errorstr);
         return;
     }
 
@@ -1431,7 +1445,7 @@ void MainWindow::onClickRecentFile()
     QString errorstr;
     if (!emuThread->bootROM(file, errorstr))
     {
-        QMessageBox::critical(this, "melonDS", errorstr);
+        QMessageBox::critical(this, HGCOOP_TITLE, errorstr);
         return;
     }
 
@@ -1450,7 +1464,7 @@ void MainWindow::onBootFirmware()
     QString errorstr;
     if (!emuThread->bootFirmware(errorstr))
     {
-        QMessageBox::critical(this, "melonDS", errorstr);
+        QMessageBox::critical(this, HGCOOP_TITLE, errorstr);
         return;
     }
 }
@@ -1464,7 +1478,7 @@ void MainWindow::onInsertCart()
     QString errorstr;
     if (!emuThread->insertCart(file, false, errorstr))
     {
-        QMessageBox::critical(this, "melonDS", errorstr);
+        QMessageBox::critical(this, HGCOOP_TITLE, errorstr);
         return;
     }
 
@@ -1486,7 +1500,7 @@ void MainWindow::onInsertGBACart()
     QString errorstr;
     if (!emuThread->insertCart(file, true, errorstr))
     {
-        QMessageBox::critical(this, "melonDS", errorstr);
+        QMessageBox::critical(this, HGCOOP_TITLE, errorstr);
         return;
     }
 
@@ -1501,7 +1515,7 @@ void MainWindow::onInsertGBAAddon()
     QString errorstr;
     if (!emuThread->insertGBAAddon(type, errorstr))
     {
-        QMessageBox::critical(this, "melonDS", errorstr);
+        QMessageBox::critical(this, HGCOOP_TITLE, errorstr);
         return;
     }
 
@@ -1611,7 +1625,7 @@ void MainWindow::onImportSavefile()
 
     if (!Platform::FileExists(path.toStdString()))
     {
-        QMessageBox::critical(this, "melonDS", "Could not open the given savefile.");
+        QMessageBox::critical(this, HGCOOP_TITLE, "Could not open the given savefile.");
         return;
     }
 
@@ -1628,7 +1642,7 @@ void MainWindow::onImportSavefile()
 
     if (!emuThread->importSavefile(path))
     {
-        QMessageBox::critical(this, "melonDS", "Could not import the given savefile.");
+        QMessageBox::critical(this, HGCOOP_TITLE, "Could not import the given savefile.");
         return;
     }
 }
@@ -1796,7 +1810,7 @@ bool MainWindow::lanWarning(bool host)
             "If you "+verb+" a LAN game now, all secondary instances will be closed.\n\n"
             "Do you wish to continue?";
 
-    auto res = QMessageBox::warning(this, "melonDS", msg, QMessageBox::Yes|QMessageBox::No, QMessageBox::No);
+    auto res = QMessageBox::warning(this, HGCOOP_TITLE, msg, QMessageBox::Yes|QMessageBox::No, QMessageBox::No);
     if (res == QMessageBox::No)
         return false;
 
@@ -2035,6 +2049,42 @@ void MainWindow::onChangeScreenLayout(QAction* act)
     emit screenLayoutChange();
 }
 
+// The game asks for other DS screens than the top one (apps not redrawn in HD yet):
+// 0 = the player's layout, 1 = bottom screen only, 2 = both screens side by side
+void MainWindow::onCoopScreenMode(int mode)
+{
+    static bool saved = false;
+    static int savedLayout, savedSizing;
+    static bool savedSwap;
+
+    if (!saved)
+    {
+        savedLayout = windowCfg.GetInt("ScreenLayout");
+        savedSizing = windowCfg.GetInt("ScreenSizing");
+        savedSwap = windowCfg.GetBool("ScreenSwap");
+        saved = true;
+    }
+    if (mode == 0)
+    {
+        windowCfg.SetInt("ScreenLayout", savedLayout);
+        windowCfg.SetInt("ScreenSizing", savedSizing);
+        windowCfg.SetBool("ScreenSwap", savedSwap);
+        saved = false;
+    }
+    else if (mode == 1)
+    {
+        windowCfg.SetInt("ScreenSizing", screenSizing_BotOnly);
+        windowCfg.SetBool("ScreenSwap", false);
+    }
+    else
+    {
+        windowCfg.SetInt("ScreenLayout", screenLayout_Horizontal);
+        windowCfg.SetInt("ScreenSizing", screenSizing_Even);
+        windowCfg.SetBool("ScreenSwap", false);
+    }
+    emit screenLayoutChange();
+}
+
 void MainWindow::onChangeScreenSwap(bool checked)
 {
     windowCfg.SetBool("ScreenSwap", checked);
@@ -2164,7 +2214,7 @@ void MainWindow::toggleFullscreen()
     else
     {
         showNormal();
-        if (hasMenu)
+        if (hasMenu && HGCoop_DevMode())
         {
             int menuBarHeight = menuBar()->sizeHint().height();
             menuBar()->setFixedHeight(menuBarHeight);

@@ -17,6 +17,7 @@
 */
 
 #include <assert.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -374,6 +375,10 @@ void EmuInstance::emuStop(StopReason reason)
 
 bool EmuInstance::usesOpenGL()
 {
+    // HeartGold Coop: automated tests need the software renderer to capture screenshots
+    if (getenv("HGCOOP_SOFT_RENDER"))
+        return false;
+
     return globalCfg.GetBool("Screen.UseGL") ||
            (globalCfg.GetInt("3D.Renderer") != renderer3D_Software);
 }
@@ -456,6 +461,10 @@ string EmuInstance::getAssetPath(bool gba, const string& configpath, const strin
         result = gba ? baseGBAROMDir : baseROMDir;
     else
         result = configpath;
+
+    // HeartGold Coop: the launcher picks the save folder (one per server, one per solo mode)
+    if (!gba && ext == ".sav" && getenv("HGCOOP_SAVE_DIR"))
+        result = getenv("HGCOOP_SAVE_DIR");
 
     // cut off trailing slashes
     for (;;)

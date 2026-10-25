@@ -156,6 +156,7 @@ signals:
     void windowFullscreenToggle();
 
     void swapScreensToggle();
+    void coopScreenModeChange(int mode);
     void screenEmphasisToggle();
 
     void syncVolumeLevel();

@@ -25,6 +25,8 @@
 #include <string>
 
 #include <QApplication>
+#include <QDir>
+#include <QFile>
 #include <QStyle>
 #include <QMessageBox>
 #include <QMenuBar>
@@ -38,6 +40,7 @@
 #include <QStandardPaths>
 #ifndef _WIN32
 #include <QGuiApplication>
+#include <QScreen>
 #include <QSocketNotifier>
 #include <unistd.h>
 #include <sys/socket.h>
@@ -46,6 +49,9 @@
 
 #include <SDL2/SDL.h>
 
+#include "GameUi.h"
+#include "HoLympeSession.h"
+#include <QKeyEvent>
 #include "OpenGLSupport.h"
 #include "duckstation/gl/context.h"
 
@@ -61,6 +67,9 @@
 #include "Net.h"
 
 #include "CLI.h"
+#include "HGCoop.h"
+#include "CoopLobby.h"
+#include "HoLympeLauncher.h"
 
 #include "Net_PCap.h"
 #include "Net_Slirp.h"
@@ -194,6 +203,17 @@ void pathInit()
 #endif
 
     QDir portabledir(portablepath);
+#if defined(__APPLE__)
+    // Ho-Lympe: melonDS.toml with Ho-Lympe's settings (keys, renderer) lives in Ho-Lympe's folder;
+    // the first time, the one shipped in the bundle is copied there
+    emuDirectory = HoLympeDir();
+    {
+        QString shipped = QDir::cleanPath(appdirpath + "/../Resources/melonDS.toml");
+        if (!QFile::exists(emuDirectory + "/melonDS.toml") && QFile::exists(shipped))
+            QFile::copy(shipped, emuDirectory + "/melonDS.toml");
+    }
+    return;
+#endif
     if (portabledir.exists())
     {
         emuDirectory = portabledir.absolutePath();
@@ -274,6 +294,42 @@ static void signalHandler(int signal)
 }
 #endif
 
+// HeartGold Coop: HGCOOP_BACKGROUND=1 (automated tests) - the windows open off-screen, without
+// taking the focus, and without sound, so the PC stays usable while the tests run
+class BackgroundWindows : public QObject
+{
+public:
+    using QObject::QObject;
+
+protected:
+    bool eventFilter(QObject* object, QEvent* event) override
+    {
+        auto* widget = qobject_cast<QWidget*>(object);
+        if (!widget || !widget->isWindow())
+            return false;
+        if (event->type() == QEvent::Polish)
+            widget->setAttribute(Qt::WA_ShowWithoutActivating);
+        if ((event->type() == QEvent::Polish || event->type() == QEvent::Show) && widget->x() > -10000)
+            widget->move(-20000 + widget->x(), widget->y());
+        return false;
+    }
+};
+
+// Ho-Lympe: the chat gets the keyboard first (T opens it, then every key while it is open)
+class ChatKeys : public QObject
+{
+public:
+    using QObject::QObject;
+
+protected:
+    bool eventFilter(QObject*, QEvent* event) override
+    {
+        if (event->type() == QEvent::KeyPress)
+            return GameUi::Get().ChatKey(static_cast<QKeyEvent*>(event));
+        return false;
+    }
+};
+
 int main(int argc, char** argv)
 {
     sysTimer.start();
@@ -326,7 +382,14 @@ int main(int argc, char** argv)
     if (argc != 0 && (!strcasecmp(argv[0], "derpDS") || !strcasecmp(argv[0], "./derpDS")))
         printf("did you just call me a derp???\n");
 
+    if (getenv("HGCOOP_BACKGROUND"))
+        qputenv("SDL_AUDIODRIVER", "dummy");
     MelonApplication melon(argc, argv);
+    if (getenv("HGCOOP_BACKGROUND"))
+        melon.installEventFilter(new BackgroundWindows(&melon));
+    melon.installEventFilter(new ChatKeys(&melon));
+    if (getenv("HOLYMPE_FAKE_VERSION"))
+        HoLympe_WatchUpdates(); // tests: the in-game update notice without the launcher
     pathInit();
 
     CLI::CommandLineOptions* options = CLI::ManageArgs(melon);
@@ -354,7 +417,7 @@ int main(int argc, char** argv)
         QString errorStr = "Failed to initialize SDL. This could indicate an issue with your audio driver.\n\nThe error was: ";
         errorStr += err;
 
-        QMessageBox::critical(nullptr, "melonDS", errorStr);
+        QMessageBox::critical(nullptr, HGCOOP_TITLE, errorStr);
         return 1;
     }
 
@@ -394,7 +457,33 @@ int main(int argc, char** argv)
 
     NetInit();
 
+    // Ho-Lympe: the launcher (account, servers, solo), unless a script or a .bat already
+    // chose the mode
+    if (!HGCoop_DevMode() && !getenv("HGCOOP_MODE") && !getenv("HGCOOP_SCRIPT"))
+    {
+        HoLympeChoice choice;
+        if (!HoLympe_RunLauncher(choice))
+            return 0;
+        options->dsRomPath = choice.romPath;
+        options->boot = true;
+    }
+
     createEmuInstance();
+
+    // HeartGold Coop: launched without a ROM, load the game shipped with the launcher
+    if (!options->dsRomPath.has_value() && !HGCoop_DevMode())
+    {
+        QString exeDir = QCoreApplication::applicationDirPath();
+        for (const QString& candidate : {HoLympeDir() + "/game/HeartGold.nds", exeDir + "/../../build/coop-p1.nds"})
+        {
+            if (QFile::exists(candidate))
+            {
+                options->dsRomPath = QDir::cleanPath(candidate);
+                options->boot = true;
+                break;
+            }
+        }
+    }
 
     {
         MainWindow* win = emuInstances[0]->getMainWindow();
@@ -420,8 +509,18 @@ int main(int argc, char** argv)
 
         win->preloadROMs(dsfile, gbafile, options->boot);
 
-        if (options->fullscreen)
+        if (options->fullscreen || HGCoop_Fullscreen())
             win->toggleFullscreen();
+        else if (const char* side = getenv("HGCOOP_WINDOW_SIDE"))
+        {
+            // HeartGold Coop: two players on one PC, each window on its half of the screen
+            QRect area = win->screen()->availableGeometry();
+            int frameW = win->frameGeometry().width() - win->width();
+            int frameH = win->frameGeometry().height() - win->height();
+            bool right = strcmp(side, "right") == 0;
+            win->resize(area.width() / 2 - frameW, area.height() - frameH);
+            win->move(area.x() + (right ? area.width() / 2 : 0), area.y());
+        }
     }
 
     int ret = melon.exec();

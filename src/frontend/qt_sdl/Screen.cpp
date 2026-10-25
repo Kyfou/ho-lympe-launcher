@@ -40,6 +40,7 @@
 #include "Config.h"
 
 #include "main_shaders.h"
+#include "GameUi.h"
 #include "OSD_shaders.h"
 #include "font.h"
 #include "version.h"
@@ -180,6 +181,15 @@ void ScreenPanel::setupScreenLayout()
 
     numScreens = layout.GetScreenTransforms(screenMatrix[0], screenKind);
 
+    // HeartGold Coop: the players' names are drawn over the top screen
+    const float* topMatrix = nullptr;
+    for (int i = 0; i < numScreens; i++)
+    {
+        if (screenKind[i] == 0)
+            topMatrix = screenMatrix[i];
+    }
+    GameUi::Get().SetTopScreenTransform(topMatrix, w, h);
+
     calcSplashLayout();
 }
 
@@ -258,6 +268,10 @@ void ScreenPanel::mousePressEvent(QMouseEvent* event)
 
     int x = event->pos().x();
     int y = event->pos().y();
+
+    // HeartGold Coop: clicks on the HD screens (e.g. the main menu buttons)
+    if (width() > 0 && height() > 0 && GameUi::Get().HandleClick((float)x / width(), (float)y / height()))
+        return;
 
     if (layout.GetTouchCoords(x, y, false))
     {
@@ -824,6 +838,15 @@ void ScreenPanelNative::paintEvent(QPaintEvent* event)
             painter.drawImage(screenrc, screen[screenKind[i]]);
         }
         emuInstance->renderLock.unlock();
+
+        // HeartGold Coop: HD menus over the game
+        qreal dpr = devicePixelRatioF();
+        bool uiChanged;
+        if (GameUi::Get().Render(uiImage, (int)(width() * dpr), (int)(height() * dpr), uiChanged))
+        {
+            painter.resetTransform();
+            painter.drawImage(QRectF(0, 0, width(), height()), uiImage);
+        }
     }
 
     osdUpdate();
@@ -1169,6 +1192,40 @@ void ScreenPanelGL::drawScreen()
         }
 
         screenSettingsLock.unlock();
+
+        // HeartGold Coop: HD menus over the game, drawn at the window's resolution
+        bool uiChanged;
+        if (GameUi::Get().Render(uiImage, w, h, uiChanged))
+        {
+            if (!uiTexture)
+            {
+                glGenTextures(1, &uiTexture);
+                glBindTexture(GL_TEXTURE_2D, uiTexture);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+                uiChanged = true;
+            }
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, uiTexture);
+            if (uiChanged)
+                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, uiImage.bits());
+
+            glUseProgram(osdShader);
+            glUniform2f(osdScreenSizeULoc, w, h);
+            glUniform1f(osdScaleFactorULoc, factor);
+            glUniform1f(osdTexScaleULoc, factor);
+            glBindBuffer(GL_ARRAY_BUFFER, osdVertexBuffer);
+            glBindVertexArray(osdVertexArray);
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+            glUniform2i(osdPosULoc, 0, 0);
+            glUniform2i(osdSizeULoc, (int)(w / factor), (int)(h / factor));
+            glDrawArrays(GL_TRIANGLES, 0, 2 * 3);
+            glDisable(GL_BLEND);
+            glUseProgram(0);
+        }
     }
 
     osdUpdate();
