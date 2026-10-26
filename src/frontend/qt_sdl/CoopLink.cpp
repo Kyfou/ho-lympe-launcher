@@ -376,6 +376,16 @@ u8* CoopLink::Mailbox(NDS* nds) const
 // the open HD screen: the build's symbols tell which function is stuck.
 void CoopLink::freezeWatch(NDS* nds, u8* box)
 {
+    // The last second's PCs, for a report asked with F12
+    recentPcs.push_back(nds->ARM9.R[15]);
+    if (recentPcs.size() > 60)
+        recentPcs.erase(recentPcs.begin());
+    if (GameUi::Get().TakeReportRequest())
+    {
+        writeReport(nds, box, "Ho-Lympe: report asked by the player (F12)", recentPcs);
+        GameUi::Get().NuzlockeMessage(QString::fromUtf8("Rapport enregistré pour Claude"), QColor(90, 160, 220));
+    }
+
     u32 beat = ReadU32(box + kOffHeartbeat);
     if (beat != lastHeartbeat || ReadU32(box + kOffSaving) != 0)
     {
@@ -390,13 +400,28 @@ void CoopLink::freezeWatch(NDS* nds, u8* box)
         freezePcs.push_back(nds->ARM9.R[15]);
     if (frozenFrames < 300)
         return;
+    writeReport(nds, box, "Ho-Lympe: the game froze (main loop stopped 5 s)", freezePcs);
+    GameUi::Get().NuzlockeMessage(QString::fromUtf8("Le jeu s'est figé : rapport enregistré pour Claude"), QColor(200, 120, 60));
+}
 
+void CoopLink::writeReport(NDS* nds, u8* box, const char* title, const std::vector<u32>& pcs)
+{
     QFile file(HoLympeDir() + "/freeze-" + QDateTime::currentDateTime().toString("yyyyMMdd-HHmmss") + ".txt");
     if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
         return;
     QTextStream out(&file);
-    out << "Ho-Lympe: the game froze (main loop stopped 5 s)\n";
-    out << "mailbox 0x" << QString::number(0x02000000 + mailbox, 16) << "  heartbeat " << beat << "\n";
+    out << title << "\n";
+    out << "mailbox 0x" << QString::number(0x02000000 + mailbox, 16) << "  heartbeat " << ReadU32(box + kOffHeartbeat)
+        << "  saving " << ReadU32(box + kOffSaving) << "\n";
+    out << "keys 0x" << QString::number(nds->KeyInput, 16) << "\n";
+    out << GameUi::Get().DebugState();
+    out << "ui block:";
+    for (int i = 0; i < 64; i++)
+        out << " " << QString::number(box[kOffUiMenu + i], 16);
+    out << "\nscreen block:";
+    for (int i = 0; i < 32; i++)
+        out << " " << QString::number(box[kOffUiMenu + 352 + i], 16);
+    out << "\n";
     out << "ui type " << (int)box[kOffUiMenu + 0] << "  screen type " << (int)box[kOffUiMenu + 24] << "\n";
     out << "CPSR " << QString::number(nds->ARM9.CPSR, 16) << "\n";
     for (int i = 0; i < 16; i++)
@@ -408,14 +433,13 @@ void CoopLink::freezeWatch(NDS* nds, u8* box)
         << "  SVC " << QString::number(nds->ARM9.R_SVC[0], 16) << " " << QString::number(nds->ARM9.R_SVC[1], 16)
         << "  IRQ " << QString::number(nds->ARM9.R_IRQ[0], 16) << " " << QString::number(nds->ARM9.R_IRQ[1], 16) << "\n";
     out << "PC samples:";
-    for (u32 pc : freezePcs)
+    for (u32 pc : pcs)
         out << " " << QString::number(pc, 16);
     out << "\nstack (from SP):\n";
     u32 sp = abort ? ((nds->ARM9.CPSR & 0x1F) == 0x17 ? nds->ARM9.R_ABT[0] : nds->ARM9.R_UND[0]) : nds->ARM9.R[13];
     for (int i = 0; i < 128; i++)
         out << QString::number(nds->ARM9Read32(sp + i * 4), 16) << (i % 8 == 7 ? "\n" : " ");
     file.close();
-    GameUi::Get().NuzlockeMessage(QString::fromUtf8("Le jeu s'est figé : rapport enregistré pour Claude"), QColor(200, 120, 60));
 }
 
 bool CoopLink::GameSaving(NDS* nds) const

@@ -10,6 +10,7 @@
 #ifndef GAMEUI_H
 #define GAMEUI_H
 
+#include <atomic>
 #include <map>
 #include <vector>
 #include <QColor>
@@ -69,6 +70,9 @@ public:
     // Chat (online): UI thread - a key while playing (T opens, Enter sends, Tab picks who, Escape
     // closes); returns true when the chat used it. Emulator thread (CoopLink) - messages in and out.
     bool ChatKey(class QKeyEvent* event);
+    // F12: the player asks for a diagnostic report (CoopLink writes it, with DebugState())
+    bool TakeReportRequest() { return reportAsked.exchange(false); }
+    QString DebugState();
     void ChatReceived(int slot, const QString& from, const QString& text, bool isPrivate);
     bool TakeChatOut(int& target, QString& text); // target -1 = everybody
     void ChatSay(const QString& text, const QString& to = QString()); // automated tests: sends (to a name, or everybody)
@@ -287,6 +291,7 @@ private:
     void drawGiftOffer(class QPainter& p, int width, int height);
     void drawPlayersAction(class QPainter& p, int width, int height);
     bool playersOpen = false; // the online players screen, over the menu
+    std::atomic<bool> reportAsked { false };
     bool cemeteryOpen = false; // the Nuzlocke cemetery, over the menu
     int cemeteryCursor = 0;
     QList<QJsonObject> cemetery;

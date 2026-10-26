@@ -347,7 +347,7 @@ MainWindow::MainWindow(int id, EmuInstance* inst, QWidget* parent) :
             }
 
             actUndoStateLoad = menu->addAction("Undo state load");
-            actUndoStateLoad->setShortcut(QKeySequence(Qt::Key_F12));
+            // Ho-Lympe: F12 writes a diagnostic report (GameUi::ChatKey)
             connect(actUndoStateLoad, &QAction::triggered, this, &MainWindow::onUndoStateLoad);
 
             menu->addSeparator();

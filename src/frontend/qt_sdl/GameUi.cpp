@@ -123,6 +123,23 @@ enum
     kMonSize = 40,
 };
 
+// What the HD menus are doing, for a diagnostic report (emulator thread)
+QString GameUi::DebugState()
+{
+    QMutexLocker locker(&mutex);
+    QString entries;
+    for (u8 e : state.entries)
+        entries += QString::number(e) + " ";
+    return QString("menu type %1 cursor %2 open %3 closing %4 entries [ %5]\n"
+                   "screen type %6 lastFrame %7 stale %8  frame %9\n"
+                   "chatOpen %10 namingActive %11 playersOpen %12 cemeteryOpen %13 giftOpen %14 playersAction %15\n"
+                   "tradeRequest %16 tradeUi %17 closeMenuForTrade %18 pendingClick %19 prevPressed %20\n")
+        .arg(state.type).arg(state.cursor).arg(state.open).arg(state.closing).arg(entries)
+        .arg(screen.type).arg(screen.lastFrame).arg(screen.staleFrames).arg(frameCount)
+        .arg(chatOpen).arg(namingActive).arg(playersOpen).arg(cemeteryOpen).arg(giftOpen).arg(playersAction)
+        .arg(tradeRequest.pending).arg(tradeUi.open).arg(closeMenuForTrade).arg(pendingClick).arg(prevPressed, 0, 16);
+}
+
 GameUi& GameUi::Get()
 {
     static GameUi instance;
@@ -1928,6 +1945,11 @@ void GameUi::drawGiftOffer(QPainter& p, int width, int height)
 
 bool GameUi::ChatKey(QKeyEvent* event)
 {
+    if (event->key() == Qt::Key_F12)
+    {
+        reportAsked = true;
+        return true;
+    }
     QMutexLocker locker(&mutex);
     if (namingActive && screen.type == kScreenNaming)
         return namingKey(event);

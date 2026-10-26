@@ -205,6 +205,8 @@ private:
     int frozenFrames = 0;
     std::vector<melonDS::u32> freezePcs;
     void freezeWatch(melonDS::NDS* nds, melonDS::u8* box);
+    void writeReport(melonDS::NDS* nds, melonDS::u8* box, const char* title, const std::vector<melonDS::u32>& pcs);
+    std::vector<melonDS::u32> recentPcs;
 
     void serviceNetwork();
     void onPacket(const melonDS::u8* data, size_t len);
