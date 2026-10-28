@@ -366,8 +366,7 @@ void GameUi::Update(NDS* nds, u8* mailbox)
         if (++unansweredFrames > 120)
         {
             unansweredFrames = 0;
-            ui[kUiType] = 0;
-            ui[kUiResult] = (u8)(s8)kUiResultWaiting;
+            ui[kUiType] = 0; // the answer stays: the game takes it when it can (start_menu.c)
             state.closing = true;
             dirty = true;
         }
