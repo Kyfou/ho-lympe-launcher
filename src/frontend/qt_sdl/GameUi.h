@@ -292,6 +292,7 @@ private:
     void drawPlayersAction(class QPainter& p, int width, int height);
     bool playersOpen = false; // the online players screen, over the menu
     std::atomic<bool> reportAsked { false };
+    int unansweredFrames = 0; // the game hasn't taken the menu's answer for this long
     bool cemeteryOpen = false; // the Nuzlocke cemetery, over the menu
     int cemeteryCursor = 0;
     QList<QJsonObject> cemetery;

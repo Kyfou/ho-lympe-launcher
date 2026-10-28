@@ -359,6 +359,21 @@ void GameUi::Update(NDS* nds, u8* mailbox)
 
     // The menu has the controls: the game doesn't see the buttons
     nds->SetKeyMask(0xFFF);
+    // An answer the game never takes (its menu is gone without saying so): after 2 s the menu
+    // closes and the buttons go back to the game, rather than a game stuck behind it
+    if ((s8)ui[kUiResult] != kUiResultWaiting && !state.closing)
+    {
+        if (++unansweredFrames > 120)
+        {
+            unansweredFrames = 0;
+            ui[kUiType] = 0;
+            ui[kUiResult] = (u8)(s8)kUiResultWaiting;
+            state.closing = true;
+            dirty = true;
+        }
+        return;
+    }
+    unansweredFrames = 0;
     if (state.closing || (s8)ui[kUiResult] != kUiResultWaiting)
         return;
 
