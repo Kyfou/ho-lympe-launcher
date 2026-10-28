@@ -437,8 +437,14 @@ void CoopLink::writeReport(NDS* nds, u8* box, const char* title, const std::vect
         out << " " << QString::number(pc, 16);
     out << "\nstack (from SP):\n";
     u32 sp = abort ? ((nds->ARM9.CPSR & 0x1F) == 0x17 ? nds->ARM9.R_ABT[0] : nds->ARM9.R_UND[0]) : nds->ARM9.R[13];
-    for (int i = 0; i < 128; i++)
-        out << QString::number(nds->ARM9Read32(sp + i * 4), 16) << (i % 8 == 7 ? "\n" : " ");
+    // The stack is in the DTCM (0x027E0000), which the bus reads don't see
+    auto read = [nds](u32 addr) -> u32 {
+        if ((addr & nds->ARM9.DTCMMask) == nds->ARM9.DTCMBase)
+            return *(u32*)&nds->ARM9.DTCM[addr & (melonDS::DTCMPhysicalSize - 1) & ~3u];
+        return nds->ARM9Read32(addr);
+    };
+    for (int i = 0; i < 256; i++)
+        out << QString::number(read(sp + i * 4), 16) << (i % 8 == 7 ? "\n" : " ");
     file.close();
 }
 
