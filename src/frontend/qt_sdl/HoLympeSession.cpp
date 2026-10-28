@@ -148,6 +148,13 @@ void HoLympeSession::endRun()
         QFile::remove(saveFile);
         QFile::remove(dir + "/nuzlocke.dat");
         QFile::remove(dir + "/cemetery.json");
+        // The new Ho-Lympe opens on the launcher: this game's settings (HGCOOP_MODE, the old seed...)
+        // must not reach it, or it starts the game again at once with the lost run's seed
+        for (const QString& key : QProcessEnvironment::systemEnvironment().keys())
+        {
+            if (key.startsWith("HGCOOP_"))
+                qunsetenv(key.toUtf8().constData());
+        }
         QProcess::startDetached(QCoreApplication::applicationFilePath(), {});
         qApp->exit(0);
     });
