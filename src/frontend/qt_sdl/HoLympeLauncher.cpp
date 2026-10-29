@@ -1366,6 +1366,7 @@ private:
         };
         check(QString::fromUtf8("Jouer en plein écran"), "fullscreen", true);
         check(QString::fromUtf8("Rester connecté au démarrage"), "rememberLogin", true);
+        check(QString::fromUtf8("Jeu accéléré (x1,5)"), "fastGame", false);
         cv->addSpacing(6);
         cv->addWidget(sectionTitle("NUZLOCKE SOLO"));
         auto ruleCheck = [&](const QString& text, int bit) {
@@ -1811,6 +1812,7 @@ private:
         SetEnv("HGCOOP_NAME", name.isEmpty() ? HoLympeApi::Settings().value("lastName").toString() : name);
         SetEnv("HGCOOP_SEED", seed);
         SetEnv("HGCOOP_WINDOWED", HoLympeApi::Settings().value("fullscreen", true).toBool() ? QString() : QString("1"));
+        SetEnv("HGCOOP_SPEED", HoLympeApi::Settings().value("fastGame", false).toBool() ? QString("1.5") : QString());
     }
 
     void play(const QString& world)

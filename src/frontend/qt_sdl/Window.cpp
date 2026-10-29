@@ -2007,6 +2007,8 @@ void MainWindow::onUpdateInterfaceSettings()
 {
     pauseOnLostFocus = globalCfg.GetBool("PauseLostFocus");
     emuInstance->targetFPS = globalCfg.GetDouble("TargetFPS");
+    if (const char* speed = getenv("HGCOOP_SPEED")) // Ho-Lympe: "Jeu accéléré (x1,5)"
+        emuInstance->targetFPS *= std::clamp(atof(speed), 1.0, 2.0);
     emuInstance->fastForwardFPS = globalCfg.GetDouble("FastForwardFPS");
     emuInstance->slowmoFPS = globalCfg.GetDouble("SlowmoFPS");
     panel->setMouseHide(globalCfg.GetBool("Mouse.Hide"),

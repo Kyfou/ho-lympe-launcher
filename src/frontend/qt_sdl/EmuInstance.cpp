@@ -18,6 +18,7 @@
 
 #include <assert.h>
 #include <stdlib.h>
+#include <algorithm>
 #include <stdio.h>
 #include <string.h>
 
@@ -102,6 +103,9 @@ EmuInstance::EmuInstance(int inst) : deleting(false),
         targetFPS = 60.0;
     }
     else targetFPS = val;
+    // Ho-Lympe: "Jeu accéléré (x1,5)" in the launcher; the sound follows (higher, like a fast-forward)
+    if (const char* speed = getenv("HGCOOP_SPEED"))
+        targetFPS *= std::clamp(atof(speed), 1.0, 2.0);
     curFPS = targetFPS;
 
     val = globalCfg.GetDouble("FastForwardFPS");
