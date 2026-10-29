@@ -55,7 +55,8 @@ public:
     static constexpr int kOffLook = 8160;          // CoopLook: gender, count, from[32], to[32]
     static constexpr int kLookColors = 32, kLookSize = 4 + 4 * kLookColors;
     static constexpr int kOffGhostLooks = kOffLook + kLookSize, kGhostLookSize = kLookSize; // CoopGhostLook[5]
-    static constexpr int kOffSaving = kOffGhostLooks + 5 * kGhostLookSize; // u32: the game is writing its save
+    static constexpr int kOffSaving = kOffGhostLooks + 5 * kGhostLookSize; // u16: the game is writing its save
+    static constexpr int kOffSpeed = kOffSaving + 2;       // u8: 1 = "Jeu accéléré (x1,5)" (the game slows its music)
     static constexpr int kOffHeartbeat = kOffSaving + 4;   // u32: +1 each turn of the game's main loop
     static constexpr int kMailboxSize = kOffHeartbeat + 4;
     // CoopGift fields
@@ -207,6 +208,7 @@ private:
     void freezeWatch(melonDS::NDS* nds, melonDS::u8* box);
     void writeReport(melonDS::NDS* nds, melonDS::u8* box, const char* title, const std::vector<melonDS::u32>& pcs);
     std::vector<melonDS::u32> recentPcs;
+    bool fastGame = getenv("HGCOOP_SPEED") != nullptr && atof(getenv("HGCOOP_SPEED")) > 1.0;
 
     void serviceNetwork();
     void onPacket(const melonDS::u8* data, size_t len);

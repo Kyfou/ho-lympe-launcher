@@ -30,6 +30,8 @@ using namespace melonDS;
 using Platform::Log;
 using Platform::LogLevel;
 
+static u16 ReadU16(const u8* p) { return (u16)(p[0] | (p[1] << 8)); }
+
 static u32 ReadU32(const u8* p)
 {
     return p[0] | (p[1] << 8) | (p[2] << 16) | ((u32)p[3] << 24);
@@ -387,7 +389,7 @@ void CoopLink::freezeWatch(NDS* nds, u8* box)
     }
 
     u32 beat = ReadU32(box + kOffHeartbeat);
-    if (beat != lastHeartbeat || ReadU32(box + kOffSaving) != 0)
+    if (beat != lastHeartbeat || ReadU16(box + kOffSaving) != 0)
     {
         lastHeartbeat = beat;
         frozenFrames = 0;
@@ -412,7 +414,7 @@ void CoopLink::writeReport(NDS* nds, u8* box, const char* title, const std::vect
     QTextStream out(&file);
     out << title << "\n";
     out << "mailbox 0x" << QString::number(0x02000000 + mailbox, 16) << "  heartbeat " << ReadU32(box + kOffHeartbeat)
-        << "  saving " << ReadU32(box + kOffSaving) << "\n";
+        << "  saving " << ReadU16(box + kOffSaving) << "\n";
     out << "keys 0x" << QString::number(nds->KeyInput, 16) << "\n";
     out << GameUi::Get().DebugState();
     out << "ui block:";
@@ -451,7 +453,7 @@ void CoopLink::writeReport(NDS* nds, u8* box, const char* title, const std::vect
 bool CoopLink::GameSaving(NDS* nds) const
 {
     const u8* box = Mailbox(nds);
-    return box && ReadU32(box + kOffSaving) != 0;
+    return box && ReadU16(box + kOffSaving) != 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -1051,6 +1053,7 @@ void CoopLink::Update(NDS* nds)
     tradeUpdate();
     giftRun(box);
     freezeWatch(nds, box);
+    box[kOffSpeed] = fastGame ? 1 : 0;
 
     if (!enabled)
         return;
